@@ -8,11 +8,12 @@ parser.add_argument("password")
 args = parser.parse_args()
 
 app = Flask(__name__)
+conn = None
 conn = imaplib.IMAP4(args.host)
-print "\nThe connexion with " + args.host + " is established"
+print "OK\nThe connexion with " + args.host + " is established"
 
 conn.login(args.user, args.password)
-print args.user +" is authenticated"
+print "OK\n"+ args.user +" is authenticated"
 
 rights = 'lrswipkxtecda'
 
@@ -98,8 +99,14 @@ def setquota(username,quota):
     else:
         return username[username.find('.')+1:] + "'s mailbox quota has been updated.\nThe new value is " + quota +" octets\n"
 
-#conn.close()
-#conn.logout()
+@app.route('/quit/')
+def quit():
+    error = None
+    res = conn.logout()
+    if res[0] == 'NO':
+        return error
+    else:
+        return "The connexion with " + args.host + " is closed now\n"
 
 if __name__ == '__main__':
     app.run()

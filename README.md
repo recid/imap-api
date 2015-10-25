@@ -11,5 +11,7 @@ With this tool, you can run some IMAP commands to manage your IMAP server. Indee
 * Manage quotas
   * Get current quota (maibox, or root mailbox)
   * Set a new quota
+* Manage IMAP connexions
+  * Close
 
 *This tool is in progress... to be continued*
