@@ -68,6 +68,36 @@ def renamemailbox(oldname, newname):
         return "Mailbox " + oldname + " has been renamed to " + newname + "\n"
 
 
+@app.route('/mailbox/quota/<username>/')
+def getquota(username):
+    error = None
+    res = conn.getquota(username)
+    if res[0] == 'NO':
+        error = str(res[1]) + "\n"
+        return error
+    else:
+        return str(res[1]) + "\n"
+
+@app.route('/mailbox/quotaroot/<username>/')
+def getquotaroot(username):
+    error = None
+    res = conn.getquotaroot(username)
+    if res[0] == 'NO':
+        error = str(res[1]) + "\n"
+        return error
+    else:
+        return str(res[1]) + "\n"
+
+@app.route('/mailbox/quota/<username>/<quota>/')
+def setquota(username,quota):
+    error = None
+    res = conn.setquota(username, '(STORAGE % s)' % quota)
+    if res[0] == 'NO':
+        error = str(res[1]) + "\n"
+        return error
+    else:
+        return username[username.find('.')+1:] + "'s mailbox quota has been updated.\nThe new value is " + quota +" octets\n"
+
 #conn.close()
 #conn.logout()
 

@@ -8,5 +8,8 @@ With this tool, you can run some IMAP commands to manage your IMAP server. Indee
   * Create
   * Delete
   * Rename
+* Manage quotas
+  * Get current quota (maibox, or root mailbox)
+  * Set a new quota
 
 *This tool is in progress... to be continued*
