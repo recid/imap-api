@@ -1,6 +1,8 @@
 from flask import Flask
-from flask_restful import Resource, Api
-import imaplib, argparse, re
+from flask_restful import Resource, Api, abort, reqparse
+from flask_restful_swagger import swagger
+from imapclient import IMAPClient
+import imaplib, argparse
 
 # Recovery arguments
 parser = argparse.ArgumentParser()
@@ -11,17 +13,57 @@ args = parser.parse_args()
 
 # Init API
 app = Flask(__name__)
-api = Api(app)
-
-# Connection establishment
-conn = None
-conn = imaplib.IMAP4(args.host)
-print "OK\nThe connexion with " + args.host + " is established"
-conn.login(args.user, args.password)
-print "OK\n"+ args.user +" is authenticated"
+api = swagger.docs(Api(app), apiVersion = '1.0')
 
 # Init variables
 rights = 'lrswipkxtecda'
+parser = reqparse.RequestParser()
+parser.add_argument('newname')
+parser.add_argument('quota')
+
+##
+# IMAPConfig class
+# This class contains the IMAP configuration
+##
+class ImapConfig:
+    def __init__(self, host, user, password):
+        self.host = host
+        self.user = user
+        self.password = password
+
+    def get_conn(self):
+        conn = imaplib.IMAP4(self.host)
+        conn.login(self.user, self.password)
+        return conn
+
+    def logout(self):
+        conn = imaplib.IMAP4(self.host)
+        conn.logout()
+        return conn
+
+
+class ImapUtil:
+    def __init__(self, host, user, password):
+        self.host = host
+        self.user = user
+        self.password = password
+
+    def get_sep(self):
+        server = IMAPClient(self.host)
+        server.login(self.user, self.password)
+        flags, sep, name = server.namespace()
+        namespace = str(sep).split(',')[0].strip('(u"')
+        return namespace
+
+    def check_mbox(self, mailbox):
+        server = IMAPClient(self.host)
+        server.login(self.user, self.password)
+        return server.folder_exists(mailbox)
+
+# Configuration Initialisation
+connFactory = ImapConfig(args.host, args.user, args.password)
+utilFactory = ImapUtil(args.host, args.user, args.password)
+
 
 ##
 # Mailboxes class
@@ -29,53 +71,89 @@ rights = 'lrswipkxtecda'
 ##
 class MailboxesList(Resource):
     def get(self):
-        res = conn.list() 
-	return [e.split(' ')[2] for e in res[1]]
+	'''This method list all mailboxes stored on args.host server'''
+        conn = None
+        try:
+            conn = connFactory.get_conn()
+            res, data = conn.list()
+            if res == 'NO':
+                abort(404, message = "The IMAP server hasn't got mailboxes")
+            else:
+	            return { "OK" : [e.split(' ')[2] for e in data] }, 200
+        finally:
+            if conn is not None:
+                conn.logout()
+
 ##
 # Mailbox class
 # This class contains all actions of mailboxes management (create/update/delete)
 ##
-class Mailbox(Resource):
+class Mailbox(Resource, ImapUtil):
     def get(self, username):
-	error = None
-	user = "user/" + username
-	res = conn.list(user)
-	if str(res[1]) in '[None]':
-	   return "Maibox " + username + " doesn't exist"
-	else:
-	   return "Mailbox " + username + " exists"
+        conn = None
+        try:
+            conn = connFactory.get_conn()
+            namespace = utilFactory.get_sep().strip("'")
+            user = namespace + username
+            exists = utilFactory.check_mbox(user)
+            if not exists:
+                abort(406, message="Maibox {} doesn't exist".format(username))
+            else:
+                return { "OK" : "Mailbox " + username + " exists" }, 200
+        finally:
+            if conn is not None:
+                conn.logout()
 
     def post(self, username):
-	error = None
-	user = "user/" + username
-	res = conn.create(user)
-	if res[0] == 'NO':
-	   error = str(res[1])
-	   return error
-	else:
-	   return "Mailbox has been created"
+        conn = None
+        try:
+            conn = connFactory.get_conn()
+            namespace = utilFactory.get_sep().strip("'")
+            user = namespace + username
+            res, data = conn.create(user)
+            if res == 'NO':
+                abort(400, message = data)
+            else:
+                return { "OK" : "Mailbox has been created" }, 201
+        finally:
+            if conn is not None:
+                conn.logout()
 
     def delete(self, username):
-	error = None
-	user = "user/" + username
-	conn.setacl(user, args.user, rights)
-	res = conn.delete(user)
-	if res[0] == 'NO':
-	   error = str(res[1])
-	   return error
-	else:
-           return "Mailbox has been deleted"
+        conn = None
+        try:
+            conn = connFactory.get_conn()
+            namespace = utilFactory.get_sep().strip("'")
+            user = namespace + username
+            conn.setacl(user, args.user, rights)
+            res, data = conn.delete(user)
+            if res == 'NO':
+                abort(500, message = data)
+            else:
+                return { "OK" : "Mailbox has been deleted" }, 201
+        finally:
+            if conn is not None:
+                conn.logout()
 
-    def put(self, oldname, newname):
-	error = None
-	olduser = 'user/' + oldname
-	newuser = 'user/' + newname
-	res = conn.rename(olduser, newuser)
-	if res[0] == 'NO':
-	    error = str(res[1])
-	    return error
-	else:
-	    return "Mailbox " + oldname + " has been renamed to " + newname
+    def put(self, username):
+        conn = None
+        try:
+            args = parser.parse_args()
+            conn = connFactory.get_conn()
+            namespace = utilFactory.get_sep().strip("'")
+            olduser = namespace + username
+            newuser = namespace + args['newname']
+            if olduser == newuser:
+                return { "OK" : "{} and {} are identical".format(olduser, newuser)}, 304
+            res, data = conn.rename(olduser, newuser)
+            if res == 'NO':
+                abort(406, message = "Mailbox {} does not exist".format(username))
+            else:
+                return { "OK" : "Mailbox " + olduser + " has been renamed to " + newuser }, 200
+
+        finally:
+            if conn is not None:
+                conn.logout()
 
 ##
 # Quota class
@@ -83,60 +161,44 @@ class Mailbox(Resource):
 ##
 class Quota(Resource):
     def get(self, username):
-    	error = None
-	user = 'user/' + username
-    	res = conn.getquota(user)
-    	if res[0] == 'NO':
-    	    error = str(res[1])
-    	    return error
-    	else:
-    	    return str(res[1])
+        conn = None
+        try:
+            conn = connFactory.get_conn()
+            namespace = utilFactory.get_sep().strip("'")
+            user = namespace + username
+            res, data = conn.getquota(user)
+            if res == 'NO':
+                abort(404, message = data )
+            else:
+                return { "OK" : data }, 200
+        finally:
+            if conn is not None:
+                conn.logout()
 
-    def put(self, username, quota):
-        error = None
-	user = 'user/' + username
-        res = conn.setquota(user, '(STORAGE % s)' % quota)
-        if res[0] == 'NO':
-            error = str(res[1])
-            return error
-        else:
-            r = str(username + "'s mailbox quota has been updated. The new value is " + quota +" octets")
-	    return r
-
-##
-# Command class
-# This class contains quit and connect command 
-##
-class Command(Resource):
-    def get(self):
-        error = None
-        res = conn.logout()
-        if res[0] == 'NO':
-            return error
-        else:
-            return "The connexion with " + args.host + " is closed now"
-
-    def post(self):
-	error = None
-	conn = imaplib.IMAP4(args.host)
-	user = 'cyrus'
-	passwd = 'cyrus'
-	conn.login(user, passwd)
-	return "The connexion with " + args.host + " is established"
+    def put(self, username):
+        conn = None
+        try:
+            args = parser.parse_args()
+            conn = connFactory.get_conn()
+            namespace = utilFactory.get_sep().strip("'")
+            user = namespace + username
+            quota = args['quota']
+            res, data = conn.setquota(user, '(STORAGE % s)' % quota)
+            if res == 'NO':
+                abort(404, message = data)
+            else:
+                return { "OK" : str(username + "'s mailbox quota has been updated. The new value is " + quota +" octets")}, 200
+        finally:
+            if conn is not None:
+                conn.logout()
 
 
 ##
 # Endpoints API adding
 ##
-api.add_resource(MailboxesList, '/mailboxes/')
-api.add_resource(Mailbox, '/mailbox/<username>/')
-api.add_resource(Mailbox, '/mailbox/create/<username>/', methods=['POST'], endpoint='create')
-api.add_resource(Mailbox, '/mailbox/delete/<username>/', methods=['DELETE'], endpoint='delete')
-api.add_resource(Mailbox, '/mailbox/rename/<oldname>/<newname>/', methods=['PUT'], endpoint='rename')
-api.add_resource(Quota, '/quota/<username>/')
-api.add_resource(Quota, '/quota/<username>/<quota>/', methods=['PUT'], endpoint='setquota')
-api.add_resource(Command, '/quit/')
-api.add_resource(Command, '/connect/', methods=['POST'], endpoint='connect')
+api.add_resource(MailboxesList, '/mailboxes')
+api.add_resource(Mailbox, '/mailbox/<username>', methods=['GET', 'POST', 'DELETE', 'PUT'])
+api.add_resource(Quota, '/quota/<username>', methods=['GET', 'PUT'])
 
 if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=80)
+    app.run(host='0.0.0.0', port=8080, debug=True)
