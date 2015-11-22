@@ -1,6 +1,7 @@
+#!/usr/bin/python
+
 from flask import Flask
 from flask_restful import Resource, Api, abort, reqparse
-from flask_restful_swagger import swagger
 from imapclient import IMAPClient
 import imaplib, argparse
 
@@ -13,11 +14,12 @@ args = parser.parse_args()
 
 # Init API
 app = Flask(__name__)
-api = swagger.docs(Api(app), apiVersion = '1.0')
+api = Api(app)
 
 # Init variables
 rights = 'lrswipkxtecda'
 parser = reqparse.RequestParser()
+parser.add_argument('username')
 parser.add_argument('newname')
 parser.add_argument('quota')
 
@@ -71,7 +73,6 @@ utilFactory = ImapUtil(args.host, args.user, args.password)
 ##
 class MailboxesList(Resource):
     def get(self):
-	'''This method list all mailboxes stored on args.host server'''
         conn = None
         try:
             conn = connFactory.get_conn()
@@ -79,7 +80,7 @@ class MailboxesList(Resource):
             if res == 'NO':
                 abort(404, message = "The IMAP server hasn't got mailboxes")
             else:
-	            return { "OK" : [e.split(' ')[2] for e in data] }, 200
+                return { "OK" : [e.split(' ')[2] for e in data] }, 200
         finally:
             if conn is not None:
                 conn.logout()
@@ -168,7 +169,7 @@ class Quota(Resource):
             user = namespace + username
             res, data = conn.getquota(user)
             if res == 'NO':
-                abort(404, message = data )
+                abort(500, message = data )
             else:
                 return { "OK" : data }, 200
         finally:
@@ -183,6 +184,10 @@ class Quota(Resource):
             namespace = utilFactory.get_sep().strip("'")
             user = namespace + username
             quota = args['quota']
+            exists = utilFactory.check_mbox(user)
+            if not exists:
+                abort(406, message="Maibox {} doesn't exist".format(username))
+
             res, data = conn.setquota(user, '(STORAGE % s)' % quota)
             if res == 'NO':
                 abort(404, message = data)
@@ -201,4 +206,4 @@ api.add_resource(Mailbox, '/mailbox/<username>', methods=['GET', 'POST', 'DELETE
 api.add_resource(Quota, '/quota/<username>', methods=['GET', 'PUT'])
 
 if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=8080, debug=True)
+    app.run(host='0.0.0.0', port=9080, debug=True)
