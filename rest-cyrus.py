@@ -19,9 +19,6 @@ api = Api(app)
 # Init variables
 rights = 'lrswipkxtecda'
 parser = reqparse.RequestParser()
-parser.add_argument('username')
-parser.add_argument('newname')
-parser.add_argument('quota')
 
 ##
 # IMAPConfig class
@@ -85,6 +82,37 @@ class MailboxesList(Resource):
             if conn is not None:
                 conn.logout()
 
+    def post(self):
+        conn = None
+        name = "mailbox"
+        try:
+            parser.add_argument('username', location='form')
+            parser.add_argument('mailshare', location='args')
+            args = parser.parse_args()
+            conn = connFactory.get_conn()
+            namespace = utilFactory.get_sep().strip("'")
+
+            tmp = args['mailshare']
+            mailshare = int(tmp)
+
+            if 0 < mailshare > 1:
+                abort(406, message = "The mailshare argument must be equal 0 or 1")
+            user = namespace + args['username']
+
+            if mailshare == 1:
+                user = args['username']
+                name = "mailshare"
+
+            res, data = conn.create(user)
+            if res == 'NO':
+                abort(400, message = data)
+            else:
+                return { "OK" : "The {} {} has been created".format(name, args['username']) }, 201
+        finally:
+            if conn is not None:
+                conn.logout()
+
+
 ##
 # Mailbox class
 # This class contains all actions of mailboxes management (create/update/delete)
@@ -92,65 +120,94 @@ class MailboxesList(Resource):
 class Mailbox(Resource, ImapUtil):
     def get(self, username):
         conn = None
+        name = "mailbox"
         try:
+            parser.add_argument('mailshare', location='args')
+            args = parser.parse_args()
             conn = connFactory.get_conn()
             namespace = utilFactory.get_sep().strip("'")
+
+            tmp = args['mailshare']
+            mailshare = int(tmp)
+            if 0 < mailshare > 1:
+                abort(406, message = "The mailshare argument must be equal 0 or 1")
+
             user = namespace + username
+
+            if mailshare == 1:
+                user = username
+                name = "mailshare"
+
             exists = utilFactory.check_mbox(user)
             if not exists:
-                abort(406, message="Maibox {} doesn't exist".format(username))
+                abort(406, message="The {} {} doesn't exist".format(name, username))
             else:
-                return { "OK" : "Mailbox " + username + " exists" }, 200
-        finally:
-            if conn is not None:
-                conn.logout()
-
-    def post(self, username):
-        conn = None
-        try:
-            conn = connFactory.get_conn()
-            namespace = utilFactory.get_sep().strip("'")
-            user = namespace + username
-            res, data = conn.create(user)
-            if res == 'NO':
-                abort(400, message = data)
-            else:
-                return { "OK" : "Mailbox has been created" }, 201
+                return { "OK" : "The {} {} exists".format(name, username) }, 200
         finally:
             if conn is not None:
                 conn.logout()
 
     def delete(self, username):
         conn = None
+        name = "mailbox"
         try:
+            parser.add_argument('mailshare', location='args')
+            arg = parser.parse_args()
             conn = connFactory.get_conn()
             namespace = utilFactory.get_sep().strip("'")
+
+            tmp = arg['mailshare']
+            mailshare = int(tmp)
+            if 0 < mailshare > 1:
+                abort(406, message = "The mailshare argument must be equal 0 or 1")
+
             user = namespace + username
+
+            if mailshare == 1:
+                user = username
+                name = "mailshare"
+
             conn.setacl(user, args.user, rights)
             res, data = conn.delete(user)
             if res == 'NO':
-                abort(500, message = data)
+                abort(400, message = data)
             else:
-                return { "OK" : "Mailbox has been deleted" }, 201
+                return { "OK" : "The {} {} has been deleted".format(name, username) }, 201
         finally:
             if conn is not None:
                 conn.logout()
 
     def put(self, username):
         conn = None
+        name = "mailbox"
         try:
+            parser.add_argument('mailshare', location='args')
+            parser.add_argument('newname', location='form')
             args = parser.parse_args()
             conn = connFactory.get_conn()
             namespace = utilFactory.get_sep().strip("'")
+
+            tmp = args['mailshare']
+            mailshare = int(tmp)
+            if 0 < mailshare > 1:
+                abort(406, message = "The mailshare argument must be equal 0 or 1")
+
+            tmp_name = args['newname']
             olduser = namespace + username
-            newuser = namespace + args['newname']
+            newuser = namespace + tmp_name
+
+            if mailshare == 1:
+                olduser = username
+                newuser = args['newname']
+                name = "mailshare"
+
             if olduser == newuser:
-                return { "OK" : "{} and {} are identical".format(olduser, newuser)}, 304
+                return { "OK" : "{} and {} are identical".format(username, args['newname'])}, 304
             res, data = conn.rename(olduser, newuser)
             if res == 'NO':
-                abort(406, message = "Mailbox {} does not exist".format(username))
+                abort(406, message = "The {} {} does not exist".format(name, username))
             else:
-                return { "OK" : "Mailbox " + olduser + " has been renamed to " + newuser }, 200
+                return { "OK" : "The {} {} has been renamed to {}".format(name, username, args['newname']) }, 200
 
         finally:
             if conn is not None:
@@ -163,13 +220,32 @@ class Mailbox(Resource, ImapUtil):
 class Quota(Resource):
     def get(self, username):
         conn = None
+        name = "mailbox"
         try:
+            parser.add_argument('mailshare', location='args')
+            args = parser.parse_args()
             conn = connFactory.get_conn()
             namespace = utilFactory.get_sep().strip("'")
+
+            tmp = args['mailshare']
+
+            mailshare = int(tmp)
+
+    #    except TypeError as e:
+    #        abort(500, message = e)
+
+            if 0 < mailshare > 1:
+                abort(406, message = "The mailshare argument must be equal 0 or 1")
+
             user = namespace + username
+
+            if mailshare == 1:
+                user = username
+                name = "mailshare"
+
             res, data = conn.getquota(user)
             if res == 'NO':
-                abort(500, message = data )
+                abort(400, message = data )
             else:
                 return { "OK" : data }, 200
         finally:
@@ -178,32 +254,46 @@ class Quota(Resource):
 
     def put(self, username):
         conn = None
+        name = "mailbox"
         try:
+            parser.add_argument('mailshare', location='args')
+            parser.add_argument('quota', location='form')
             args = parser.parse_args()
             conn = connFactory.get_conn()
             namespace = utilFactory.get_sep().strip("'")
+
+            tmp = args['mailshare']
+            mailshare = int(tmp)
+            if 0 < mailshare > 1:
+                abort(400, message = "The mailshare argument must be equal 0 or 1")
+
             user = namespace + username
+
+            if mailshare == 1:
+                user = username
+                name = "mailshare"
+
             quota = args['quota']
             exists = utilFactory.check_mbox(user)
             if not exists:
-                abort(406, message="Maibox {} doesn't exist".format(username))
+                abort(406, message="The {} {} doesn't exist".format(name, username))
 
             res, data = conn.setquota(user, '(STORAGE % s)' % quota)
             if res == 'NO':
                 abort(404, message = data)
             else:
-                return { "OK" : str(username + "'s mailbox quota has been updated. The new value is " + quota +" octets")}, 200
+                return { "OK" : "{}'s {} quota has been updated. The new value is {} octets".format(username, name, quota)}, 200
         finally:
             if conn is not None:
                 conn.logout()
-
 
 ##
 # Endpoints API adding
 ##
 api.add_resource(MailboxesList, '/mailboxes')
-api.add_resource(Mailbox, '/mailbox/<username>', methods=['GET', 'POST', 'DELETE', 'PUT'])
+api.add_resource(Mailbox, '/mailboxes/<username>')
 api.add_resource(Quota, '/quota/<username>', methods=['GET', 'PUT'])
 
 if __name__ == '__main__':
+    #app.run(host='0.0.0.0', port=9080)
     app.run(host='0.0.0.0', port=9080, debug=True)
