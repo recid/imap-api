@@ -86,7 +86,7 @@ class MailboxesList(Resource):
         conn = None
         name = "mailbox"
         try:
-            parser.add_argument('username', location='form')
+            parser.add_argument('username', location='get_json')
             parser.add_argument('mailshare', location='args')
             args = parser.parse_args()
             conn = connFactory.get_conn()
@@ -182,7 +182,7 @@ class Mailbox(Resource, ImapUtil):
         name = "mailbox"
         try:
             parser.add_argument('mailshare', location='args')
-            parser.add_argument('newname', location='form')
+            parser.add_argument('newname', location='get_json')
             args = parser.parse_args()
             conn = connFactory.get_conn()
             namespace = utilFactory.get_sep().strip("'")
@@ -257,7 +257,7 @@ class Quota(Resource):
         name = "mailbox"
         try:
             parser.add_argument('mailshare', location='args')
-            parser.add_argument('quota', location='form')
+            parser.add_argument('quota', location='get_json')
             args = parser.parse_args()
             conn = connFactory.get_conn()
             namespace = utilFactory.get_sep().strip("'")
